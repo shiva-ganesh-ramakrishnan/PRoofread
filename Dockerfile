@@ -12,7 +12,7 @@ RUN apt-get update && apt-get install -y \
 
 WORKDIR /app
 
-COPY build/my-languages.so /build/my-languages.so
+COPY build/my-languages.so /app/build/my-languages.so
 
 COPY app.py .
 
