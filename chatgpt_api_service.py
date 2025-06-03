@@ -1,7 +1,7 @@
 import openai
 import json
 from PRoofread_env import *
-
+import time
 
 client = openai.OpenAI(api_key=CHATGPT_API_KEY)
     
@@ -25,7 +25,7 @@ def merge_duplicate_entries(entries):
             ):
                 
                 merged_entry = entry.copy()
-                merged_entry['merged_from_shas'] = {entry['sha'], other['sha']}
+                merged_entry['merged_from_shas'] = [entry['sha'], other['sha']]
                 merged_entries = [e for e in merged_entries if e != other]
                 merged_entries.append(merged_entry)
                 is_duplicate = True
@@ -41,14 +41,15 @@ def merge_duplicate_entries(entries):
 
 #Just a common interface 
 def call_chatgpt_api(chatgpt_conversation, temperature=0, model = 'gpt-4.1-mini'):
-    
+    start = time.time()
     response = client.chat.completions.create(    
         model=model,
         messages=chatgpt_conversation,
         temperature=temperature
     )
-
-    return response.choices[0].message.content.strip()
+    end = time.time()
+    
+    return response.choices[0].message.content.strip(), end-start
 
 
 def check_severity_of_change(old_code, new_code, conversation):
@@ -101,7 +102,9 @@ def check_severity_of_change(old_code, new_code, conversation):
     conversation.append({"role": "user", "content": [{"type": "text", "text": severity_prompt}]})
 
     
-    res = call_chatgpt_api(conversation)
+    res, time_taken = call_chatgpt_api(conversation)
+    # with open('all_prompts.txt', 'a') as prompt_file:
+    #     prompt_file.write('\n\nPrompt:\n'+severity_prompt+'\n'+'Time taken: '+f'{time_taken}'+'\n\n')
     
     conversation.append({"role": "assistant", "content": [{"type": "text", "text": res}]})
     return json.loads(res)
@@ -122,24 +125,27 @@ def get_comments_from_chatgpt(conversation, change_list):
     }},
     ...
     ]    
-    '''
+    '''    
     conversation.append({"role": "user", "content": [{"type": "text", "text": get_comment_prompt}]})
-    res = call_chatgpt_api(conversation)
-    
+    res, time_taken = call_chatgpt_api(conversation)
+    # with open('all_prompts.txt', 'a') as prompt_file:
+    #     prompt_file.write('\n'+get_comment_prompt+'\n'+'Time taken:'+f'{time_taken}'+'\n\n')
     return json.loads(res)
 
 def send_diff_data_to_chatgpt(old_code, new_code, numm):
     conversation = []
-
+    print('Checking severity of changes')
     changes_data = {'data': check_severity_of_change(old_code, new_code, conversation)}
     with open(f'chatgpt_results/chatgpt_output_{numm}.json', 'w') as cpf:
         json.dump(changes_data, fp=cpf, indent=4)
 
     with open(f'chatgpt_results/chatgpt_output_{numm}.json', 'r') as cpf:
         changes_data_json = json.load(cpf)
+    print('Removing duplicate entries if any')
     new_changes = merge_duplicate_entries(changes_data_json['data'])
     with open(f'chatgpt_results/new_chatgpt_output_{numm}.json', 'w') as cpf:
         json.dump({'data': new_changes}, fp=cpf, indent=4)
+    print('Getting actual comments to add from chatgpt')
     with open(f'chatgpt_results/new_chatgpt_output_{numm}.json', 'r') as cpf:
         new_changes_data_json = json.load(cpf)  
     review_needed = False
@@ -155,3 +161,5 @@ def send_diff_data_to_chatgpt(old_code, new_code, numm):
 
         with open(f'final_comments/final_comments_{numm}.json', 'w') as fcp:
             json.dump({'data': final_comments}, fp=fcp, indent=4)
+    else:
+        print('No serious changes in this file')

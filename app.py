@@ -8,9 +8,9 @@ import requests
 from PRoofread_env import *
 from diff_file_parser import parse_diff, get_context_from_all_data
 import os
+# import time
 
 app = Flask(__name__)
-
 def post_comment_on_pr(pr_number, comment_json):
     if '-' in comment_json["line_range"]:
         start_line, end_line = map(int, comment_json["line_range"].split('-'))
@@ -18,28 +18,35 @@ def post_comment_on_pr(pr_number, comment_json):
         start_line = end_line = int(comment_json["line_range"])
     
     version = "RIGHT" if comment_json["version"] == "new" else "LEFT"
-
+    # print(version)
     body = {
     "body": comment_json["comment_to_add"],
     "commit_id": comment_json["sha"],
     "path": comment_json["file"],
-    "start_line": start_line,
-    "start_side": version,
     "line": end_line,
     "side": version
     }
+    if start_line != end_line:
+        body["start_line"] = start_line
+        body["start_side"] = version
 
     url = POST_COMMENTS_ON_PR_URL.format(request_no = pr_number)
     headers = {
         "Authorization": f"token {GITHUB_API_KEY}",
         "Accept": POST_COMMENTS_ON_PR_ACCEPT_HEADER_VALUE
     }
-    print(url)
+    # print(url)
     try:
+        # start = time.time()
         resp = requests.post(url=url, json=body, headers=headers)
+        # end = time.time()
+        # print(f'Time taken for posting comment: {end-start}')
         if resp.status_code == 201:
             print('Comment created successfully')
+            print(body["body"])
         else:
+            print('Failed to add comment')
+            print(body)
             print(resp.json())
     
     except Exception as e:
@@ -53,6 +60,11 @@ def get_pr_data_from_github():
     if 'pull_request' in data:
         try:
             request_no = data['pull_request']['number']
+            state = data['pull_request']['state']
+            if state == 'closed':
+                print('Webhook got triggered because PR is closed')
+                return Response(), 200
+            print(f'State: {state}')
             head_sha = data['pull_request']['head']['sha']
             base_sha = data['pull_request']['base']['sha']
             print('Pull request data is legit!')
@@ -105,13 +117,21 @@ def get_pr_data_from_github():
             folder_path = 'final_comments'
 
             files = [os.path.join(folder_path, f) for f in os.listdir(folder_path) if os.path.isfile(os.path.join(folder_path, f))]
-
+            if files == []:
+                print('No files detected. PR is probably a simple one')
+                #TODO: MERGE_PR
+                return Response(), 200
+            
             for fil in files:
                 with open(fil, 'r') as fp:
                     final_comments_data = json.load(fp)
+                os.remove(fil)    
                 for final_comment in final_comments_data['data']:
-                    post_comment_on_pr(request_no, final_comment)
+                    if final_comment["version"].lower() == "new":
+                        post_comment_on_pr(request_no, final_comment)
 
+            
+                
             
 
             # print(files)

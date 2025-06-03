@@ -4,7 +4,6 @@ import base64
 from PRoofread_env import *
 import requests
 from tree_sitter import Language, Parser
-import code_analyzer
 from chatgpt_api_service import send_diff_data_to_chatgpt
 
 
@@ -12,10 +11,30 @@ from chatgpt_api_service import send_diff_data_to_chatgpt
 Fully functional diff parser that takes in the diff file and then returns the line numbers that have the changes associated with them.
 THe next step would be to go through the whole document and find those code blocks(methods/classes in which this change has been made.
 '''
+def is_trivial_change(file_lines, changed_lines):
+    """
+    Check if changed lines are trivial ie. comments, blank lines, or logging-only statements
+    Might need enhancements later
+    """
+    log_pattern = re.compile(r'\blogger\.(debug|info|warn|error|trace|fatal)\s*\(')
+    var_decl_pattern = re.compile(r'^\s*(final\s+)?(int|String|boolean|long|float|double|char|var)\s+\w+(\s*=\s*[^;]+)?;')    
+    
+    for line_no in changed_lines:
+        if line_no == -1 or line_no > len(file_lines):
+            continue
+
+        line = file_lines[line_no - 1].strip()
+        if not line or log_pattern.search(line) or var_decl_pattern.match(line):
+            continue
+        
+        return False
+
+    return True
 
 def get_file_from_sha_hash(path, blob):
     url = GITHUB_REPO_URL+f'contents/{path}?ref={blob}'
-    print(url)
+    print(f'Fetching whole file contents: {path}')
+    # print(url)
     
     headers = {
         "Authorization": f"token {GITHUB_API_KEY}",
@@ -24,17 +43,17 @@ def get_file_from_sha_hash(path, blob):
 
     blob_response = requests.get(url=url, headers=headers)
     
-    print(blob_response.status_code)
+    # print(blob_response.status_code)
     jsonn = blob_response.json()
 
     if str(blob_response.status_code) == '200':
         content = base64.b64decode(jsonn['content']).decode('utf-8')
         with open('files/parsing_diff/content_from_blob.txt', 'w') as content_file:
             content_file.write(content)
-        print('Done writing content to file')
+        # print('Done writing content to file')
         return content
 
-    print('Done writing into blob_file')
+    # print('Done writing into blob_file')
     return None
 
 
@@ -76,6 +95,7 @@ def is_comment(string):
 
 
 def get_relevant_method_block_for_lines(data, lines_list, numm, file_name, sha):
+    print(f'Getting relevant method blocks for file: {file_name}')
     data_lines = data.splitlines()
     JAVA_LANGUAGE = Language('build/my-languages.so', 'java')
     parser = Parser()
@@ -84,7 +104,7 @@ def get_relevant_method_block_for_lines(data, lines_list, numm, file_name, sha):
 
     if tree.root_node.has_error:
         print('Java file has syntax errors')
-    if code_analyzer.is_trivial_change(data_lines, lines_list):
+    if is_trivial_change(data_lines, lines_list):
         print('Change is trivial, no need of checking')
         res = f'File Name: {file_name}\nSHA: {sha}\n'
         with open(f'files/relevant_data_from_ast_/tree_output_{numm}.txt', 'w') as tof:
@@ -99,11 +119,11 @@ def get_relevant_method_block_for_lines(data, lines_list, numm, file_name, sha):
         if line_no != -1:
             start_end_type = find_enclosing_method_or_class(tree, line_no)
             if start_end_type[2] not in ['method', 'class']:
-                print(start_end_type)
-                print(data_lines[max(0, line_no-10):line_no])
+                # print(start_end_type)
+                # print(data_lines[max(0, line_no-10):line_no])
                 continue
             elif start_end_type[2] == 'method':
-                print(f'Method found for line number: {line_no}')
+                # print(f'Method found for line number: {line_no}')
                 
                 if start_end_type not in res_dic:
                     res_dic[start_end_type] = [line_no-1]
@@ -111,7 +131,7 @@ def get_relevant_method_block_for_lines(data, lines_list, numm, file_name, sha):
                 else:
                     res_dic[start_end_type].append(line_no-1)
             else:
-                print(f'The enclosing node is not a method - {start_end_type[2]}')
+                # print(f'The enclosing node is not a method - {start_end_type[2]}')
                 if (line_no, data_lines[line_no-1], 'class') not in res_list:
                     key = (line_no, data_lines[line_no-1], 'class')
                     res_dic[key] = [line_no]
@@ -137,7 +157,7 @@ def get_relevant_method_block_for_lines(data, lines_list, numm, file_name, sha):
                     tof.write(data[res[0]:res[1]]+'\n')
                 tof.write(f'------CHANGE_BLOCK END---\n')
         
-        print('Successfully written to a new file')
+        print('Successfully written the enclosing blocks to a new file')
         with open(f'files/relevant_data_from_ast_/tree_output_{numm}.txt', 'r') as tof:
             dat = tof.read()
         return dat
@@ -147,6 +167,7 @@ def get_relevant_method_block_for_lines(data, lines_list, numm, file_name, sha):
 
 
 def parse_diff(diff_file):
+    print('Parsing diff file')
     old_new_file_mappings = {}
     with open(diff_file, 'r') as df:
         lines = df.read().splitlines()
@@ -281,8 +302,9 @@ def get_context_from_all_data(parsed_diff_file):
             print(new_diff_data)
             print('Nothing to compare. Changes are very simple')
         else:
-
+            print('Calling chatgpt API for getting comments')
             send_diff_data_to_chatgpt(old_diff_data, new_diff_data, files_counter//2)
+            print('Done getting comments for current file data\n\n')
             
 
         
