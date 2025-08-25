@@ -41,7 +41,8 @@ Proofreader automates code reviews in the following steps:
 8. **Generate Comments for Significant Changes**  
    If the severity is not `LOW`, the tool sends the change details to ChatGPT again to generate a reviewer-style comment.
 
-Demo Video:
-https://drive.google.com/file/d/1YhBRwHnLsaV3OzsdFb-leVcUSxsfCncQ/view?usp=sharing
 9. **Post to GitHub**  
    The final comment, with proper formatting and line range metadata, is posted directly to the GitHub pull request as a review comment.
+
+Demo Video:
+https://drive.google.com/file/d/1YhBRwHnLsaV3OzsdFb-leVcUSxsfCncQ/view?usp=sharing
